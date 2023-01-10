@@ -1,0 +1,4 @@
+pytube
+requests
+subprocess
+pandas # for saving the titles and descriptions
