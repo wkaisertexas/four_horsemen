@@ -38,7 +38,7 @@ def video_info(filename):
     # Gets the frame rate of the video
 
     # Regex matches to the pattern , 30.000 fps
-    frame_rate = re.search(',\\s+(\\d+).(\\d+)\\s+fps', raw_info).groups()[0]
+    frame_rate = re.search(r', (\d+\.\d+|\d+) fps', raw_info).groups()[0]
     frame_rate = float(frame_rate.split(' ')[-1])
 
     return duration, frame_rate
@@ -57,61 +57,34 @@ backgrounds = [f for f in os.listdir(args.backgrounds)]
 info = pd.DataFrame(columns=['filename', 'title', 'description', 'i', 'j'])
 
 for i, url in enumerate(videos):
-    if i == 0:
-        continue
     print(f'Processing {url} with {i} index...')
     if len(url) == 11: # YouTube ID
         url = f'https://www.youtube.com/watch?v={url}'
+        print("Video ID converted to URL")
 
     yt = YouTube(url)
     print("Downloading video...")
-    yt.streams.filter(progressive=True, file_extension='mp4').order_by('resolution').desc().first().download('tmp', f'{i}.mp4')
+    yt.streams.filter(progressive=True).order_by('resolution').desc().first().download('tmp', f'{i}.mp4')
 
     duration, frame_rate = video_info(f'tmp/{i}.mp4')
 
     # Video length is as close to 60 seconds as possible (includes overlap)
-    clips = int(math.ceil(duration / (60 - args.overlap)))
+    clips = int(math.ceil(duration / (180 - args.overlap)))
     clip_duration = duration / clips # Duration of each clip (not quite 60 seconds because of overlap and the fact that you do not want to go over)
     background = random.choice(backgrounds) # Randomly chooses a background which remains the same of all clips 
-    bg_duration, bg_frame_rate = video_info(f'{args.backgrounds}/{background}')
+    bg_duration, bg_frame_rate = video_info(os.path.join(args.backgrounds, background))
 
     for j in range(clips):
         # Constructs a tik tok video with the background and the clip
         print(f'Making clip {j}/{clips} for video {i}')
         
-        # Crops the video to the correct length
-        print("\n\n\nCuts the video\n\n\n")
-        os.system(f'ffmpeg -y -i tmp/{i}.mp4 -ss {j * clip_duration} -t {clip_duration + args.overlap} -c copy tmp/{i}_{j}.mp4')
-
-        # Crops with video to 4:3 aspect ratio and resizes to a width of 1080p
-        print('\n\n\nResizes the video\n\n\n')
-        os.system(f'ffmpeg -y -i tmp/{i}_{j}.mp4 -vf "crop=4*min(iw/4\\,ih/3):3*min(iw/4\\,ih/3),scale=-2:810" -c:v libx264 -preset ultrafast tmp/{i}_{j}_crop.mp4')
-
-        # Edits the video with the background using a random clip from the backgroun
+        time_range = bg_duration - (clip_duration + args.overlap) # Duration of the background clip
+        start = random.random() * time_range
         
-        range = bg_duration - (clip_duration + args.overlap) # Duration of the background clip
-        start = random.random() * range
-        
-        print("\n\n\nClipping the background\n\n\n")
-        os.system(f'ffmpeg -y -i {os.path.join(args.backgrounds,background)} -ss {start} -t {clip_duration + int(args.overlap):.2f} -c copy -c:v libx264 -preset ultrafast -crf 29 tmp/{i}_{j}_bg.mp4')
-
-        # Sets the frame rate of the background to the frame rate of the clip
-        os.system(f'cp tmp/{i}_{j}_bg.mp4 tmp/{i}_{j}_bg_fr.mp4')
-
-        print('\n\n\nResizing the background\n\n\n')
-        os.system(f'ffmpeg -y -i tmp/{i}_{j}_bg_fr.mp4 -vf "crop=1080*min(iw/1080\\,ih/1110):1110*min(iw/1080\\,ih/1110),scale=1080:1110" -c:v libx264 -preset ultrafast -crf 29 tmp/{i}_{j}_bg_final.mp4')
-
-        # Stacks clips using ffmpeg, complex_filter, vstack and amerge() keeping only the audio from the first clip
-        print("\n\n\nStacking clips\n-----------------------")
-        os.system(f'ffmpeg -y -i tmp/{i}_{j}_crop.mp4 -i tmp/{i}_{j}_bg_final.mp4  -filter_complex "[0:v][1:v]vstack" -vsync 2 -map 0:a -c:v libx264 -preset ultrafast -crf 29 {args.output}/{i}_{j}_final.mp4')
-
-
+        os.system(f'ffmpeg -v quiet -y -i {os.path.join(args.backgrounds, background)} -i {os.path.join("tmp", f"{i}.mp4")} -filter_complex "[1:v]trim=start={j * clip_duration}:duration={clip_duration + args.overlap},setpts=PTS-STARTPTS,crop=4*min(iw/4\,ih/3):3*min(iw/4\,ih/3),scale=1080:810,pad=iw:ih+10:0:0:black[top],[0:v]trim=start={start}:duration={clip_duration + args.overlap},setpts=PTS-STARTPTS,crop=1080*min(iw/1080\,ih/1100):1100*min(iw/1080\,ih/1100),scale=1080:1100,[top]vstack=inputs=2:shortest=1,drawtext=fontsize=180:fontcolor=white:x=80:y=750:text=\'{j + 1}\':enable=\'between(t,0,10)\':box=1:boxborderw=10:line_spacing=500:boxcolor=black[out],[1:a]atrim=start={j * clip_duration}:duration={clip_duration + args.overlap},asetpts=PTS-STARTPTS[aout]" -map \'[out]\' -map \'[aout]\' -r 30 -vsync 2 -c:v libx264 -crf 29 -preset ultrafast {os.path.join(args.output, f"{i}+{j}.mp4")}')
         # Uploads the video to Tik Tok usign the API and the requests library
-        info = pd.concat([info, pd.DataFrame([[f'{args.output}/{i}_{j}_final.mp4', yt.title, f"Part {i + 1}\n" + yt.title + "\n" + yt.description, i, j]], columns=info.columns)])
+        info = pd.concat([info, pd.DataFrame([[f'{args.output}/{i}_{j}_final.mp4', yt.title, f"Part {j + 1}\n" + yt.title + "\n" + yt.description, i, j]], columns=info.columns)])
 
-        os.system(f'rm tmp/{i}_{j}.mp4 tmp/{i}_{j}_crop.mp4 tmp/{i}_{j}_bg.mp4 tmp/{i}_{j}_bg_fr.mp4 tmp/{i}_{j}_bg_final.mp4')
-    
-        # Saves the dataframe to an excel file (just going to have to copy and paste for now lol)
         info.to_excel('info.xlsx')
         # input("Press enter to continue...")
     os.system(f'rm tmp/{i}.mp4')
