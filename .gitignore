@@ -1,4 +1,17 @@
-FamilyGuyClips/tmp
-FamilyGuyClips/backgrounds
-FamilyGuyClips/output
-FamilyGuyClips/info.xlsx
+# Family Guy Clips
+__pycache__
+
+
+four_horsemen/FamilyGuyClips/tmp
+four_horsemen/FamilyGuyClips/backgrounds
+four_horsemen/FamilyGuyClips/output
+four_horsemen/FamilyGuyClips/info.xlsx
+four_horsemen/FamilyGuyClips/__pycache__
+
+# MutliMemes
+four_horsemen/MultiMemes/tmp
+four_horsemen/MultiMemes/backgrounds
+four_horsemen/MultiMemes/output
+four_horsemen/MultiMemes/info.xlsx
+four_horsemen/MultiMemes/__pycache__
+four_horsemen/MultiMemes/subreddits.txt

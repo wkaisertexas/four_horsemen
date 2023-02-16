@@ -1,0 +1,6 @@
+requests
+subprocess
+pandas
+
+# Family Guy Clips
+pytube
