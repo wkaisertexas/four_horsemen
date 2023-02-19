@@ -3,12 +3,17 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "four-horsemen"
+name = "four_horsemen"
 description = ''
 readme = "README.md"
 requires-python = ">=3.7"
 license = "MIT"
-keywords = []
+keywords = [
+  "ffmpeg",
+  "algorithmic content",
+  "family guy",
+  "reddit"
+]
 authors = [
   { name = "William Kaiser", email = "wkaisertexas@gmail.com" },
 ]
@@ -26,10 +31,16 @@ classifiers = [
 dependencies = []
 dynamic = ["version"]
 
+[project.scripts]
+family_guy = "four_horsemen.family_guy:main"
+
+[project.gui-scripts]
+family_guy = "four_horsemen.family_guy:main"
+
 [project.urls]
-Documentation = "https://github.com/unknown/four-horsemen#readme"
-Issues = "https://github.com/unknown/four-horsemen/issues"
-Source = "https://github.com/unknown/four-horsemen"
+Documentation = "https://github.com/wkaisertexas/four-horsemen#readme"
+Issues = "https://github.com/wkaisertexas/four-horsemen/issues"
+Source = "https://github.com/wkaisertexas/four-horsemen"
 
 [tool.hatch.version]
 path = "four_horsemen/__about__.py"
@@ -39,6 +50,7 @@ dependencies = [
   "pytest",
   "pytest-cov",
 ]
+
 [tool.hatch.envs.default.scripts]
 cov = "pytest --cov-report=term-missing --cov-config=pyproject.toml --cov=four_horsemen --cov=tests {args}"
 no-cov = "cov --no-cov {args}"

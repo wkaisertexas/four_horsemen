@@ -4,6 +4,7 @@ import json
 import subprocess
 import os
 
+
 def get_posts(subreddit: str, type: str, limit: int, api_key: str):
     url = f'https://www.reddit.com/r/{subreddit}/{type}.json?limit={limit}'
 
@@ -15,6 +16,7 @@ def get_posts(subreddit: str, type: str, limit: int, api_key: str):
     body = json.loads(r.text)
 
     return body.get('data', {}).get('children', []).map(lambda x: x.get('data', {})) # Destructures into post-level data
+
 
 def download_image(post, cat, session: requests.Session) -> bool:
     '''Downloads the image from the post'''
@@ -38,9 +40,11 @@ def download_image(post, cat, session: requests.Session) -> bool:
     post['image'] = save_path
     return True
 
+
 def get_dimensions(post):
     '''Gets the dimensions of the post'''
     output = subprocess.Popen(f'ffmpeg -i tmp/{i}.mp4', stdout=subprocess.PIPE, stderr=subprocess.STDOUT, shell=True).communicate()[0].decode('utf-8')
+
 
 def make_video(subreddit, type, posts: List[str], backgrounds, output_dir, length):
     '''Creates the video which can contain multiple images'''
@@ -50,3 +54,19 @@ def make_video(subreddit, type, posts: List[str], backgrounds, output_dir, lengt
     dimensions = map(get_dimensions, posts)
 
     # Generates positions for each image to be placed
+
+
+def get_post_layout(space, posts):
+    """
+    Gets the layout of the posts
+    """
+
+    # Determine the number of rows and columns
+    pass
+
+    # Calculates a position and size for each post
+    pass
+
+    # returns the positions and sizes
+    pass
+
