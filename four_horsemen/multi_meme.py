@@ -25,7 +25,18 @@ NUM_IMAGES = [1, 2, 3, 4, 5, 6] # Up to six images per video
 BACKGROUND_SPEED = [0, 0.5, 1, 1.5, 2, 2.5, 3]
 LENGTHS = [5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60]
 
+DIMENSIONS = {
+    'output': (1080, 1920),
+    'imgs': (800, 1080),
+    'imgs_center': (540, 540)
+}
+
+# IMPLEMENTATION
+
 def main():
+    """
+    Main function for the program
+    """
     args = get_args()
     args = parse_args(args)
 
@@ -45,7 +56,14 @@ def main():
     videos_per_subreddit = int(args.number) // len(subreddits) + 1 # +1 to account for rounding down
     videos_per_category = videos_per_subreddit // len(REQUESTYPES) + 1 # +1 to account for rounding down
 
+    video_info = make_info(frame, backgrounds, videos_per_category)
 
+    print(video_info)
+
+    success, failed = create_videos(video_info, args.output) 
+    
+    print(f'Successfully created {success:4d} videos')
+    print(f'Failed to create {failed:4d} videos')
 
 def get_args():
     args = ArgumentParser()
@@ -144,29 +162,145 @@ def make_video_info(posts: pd.DataFrame, subreddit: str, backgrounds: List, cate
 def create_videos(info: List[dict]):
     """
     Creates the videos from the information
+
+    Return (sucess, failed)
     """
+    sucess = []
+    failed = []
     for i in info:
-        create_video(i)
+        try:
+            create_video(i)
+            sucess.append(i)
+        except:
+            failed.append(i)
+
+    return sucess, failed
 
 def create_video(info: dict):
     """
     Creates a video from the information
     """
-    pass
 
-def get_post_layout(space, posts):
+    command = [
+        'ffmpeg',
+        '-y',
+
+        '-loop', '1',
+        '-i', f'backgrounds/{info["background"]}',
+
+        '-filter_complex', f'"{filter_complex(info)}"'
+
+
+        # output is the info['id'] + '.mp4'
+        f'tmp/{info["id"]}.mp4',
+
+        
+    ]
+
+    command = ' '.join(command)
+    
+    os.system(command)
+
+    # checks if the video was not created, throws if not
+
+
+def filter_complex(info: dict):
+    """
+    Creates the filter_complex command for ffmpeg
+    """
+    # Gets the layout of the posts
+    num_images = len(info['images'])
+    layout = get_post_layout(DIMENSIONS, num_images)
+
+    filter_complex = [
+        f'[0:v]scale={info["length"] * info["speed"]}:1080:force_original_aspect_ratio=decrease,pad={info["length"] * info["speed"]}:1080:(ow-iw)/2:(oh-ih)/2,setsar=1[v0];'
+
+        # Overlays the images
+        *[f'[v{i}][{i+1}:v]overlay={x}:{y}[v{i+1}]' for i, (x, y) in enumerate(layout)],
+    ]
+
+    filter_complex = ','.join(filter_complex)
+
+    return filter_complex
+
+
+
+def get_post_layout(dimensions: tuple(int, int), num_images: int):
     """
     Gets the layout of the posts
     """
+    rows, columns = get_rows_columns(num_images)
 
-    # Determine the number of rows and columns
-    pass
+    return [
+        get_pos(i, num_images, rows, columns, dimensions) for i in range(num_images)
+    ]
 
-    # Calculates a position and size for each post
-    pass
 
-    # returns the positions and sizes
-    pass
+def get_pos(i: int, n: int, rows: int, columns: int, dimensions: tuple(int, int)):
+    """
+    Gets the position of the post
+
+    Changes depending on whether or not the post is in a full or half row
+    """
+    x, y = dimensions
+
+    # Gets the width and height of each post
+    width = x / columns
+    height = y / rows
+
+    # Gets the row and column of the post
+    row = i // columns
+    column = i % columns
+
+    # checks is the post is in a full row or not
+    if n % 2 == 1 and row == rows - 1:
+        # Gets the width of the full row
+        full_width = (n // 2) * width
+
+        # Gets the width of the half row
+        half_width = (n - n // 2) * width / 2
+
+        # Gets the width of the post
+        post_width = (n - n // 2) * width
+
+        # Gets the position of the post
+        x = (full_width + half_width) - post_width
+        y = row * height
+
+        return x, y
+    
+    # Gets the position of the post
+    x = column * width
+    y = row * height
+
+    return x, y
+
+
+def get_rows_columns(n):
+    """
+    Gets the number of rows and columns for the posts
+    """
+    if n == 1:
+        return 1, 1
+    elif n == 2:
+        return 1, 2
+    elif n == 3:
+        return 2, 2
+    elif n == 4:
+        return 2, 2
+    elif n == 5:
+        return 2, 3
+    elif n == 6:
+        return 2, 3
+    elif n == 7:
+        return 3, 3
+    elif n == 8:
+        return 3, 3
+    elif n == 9:
+        return 3, 3
+    else:
+        raise ValueError(f'Number of posts {n} is not supported')
+
 
 if __name__ == '__main__':
     main()
