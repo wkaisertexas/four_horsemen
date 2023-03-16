@@ -8,14 +8,18 @@ import os
 def get_posts(subreddit: str, type: str, limit: int, api_key: str):
     url = f'https://www.reddit.com/r/{subreddit}/{type}.json?limit={limit}'
 
+    print(f'Getting posts from {url}')
     headers = {'User-Agent': 'Mozilla/5.0'}
     if api_key: 
-        r = requests.get(url, headers=headers, auth=api_key)
+        r = requests.get(url, headers=headers, auth=api_key, timeout=20)
     else:
-        r = requests.get(url, headers=headers)
+        r = requests.get(url, headers=headers, timeout=20)
     body = json.loads(r.text)
 
-    return body.get('data', {}).get('children', []).map(lambda x: x.get('data', {})) # Destructures into post-level data
+    return list(map(
+               lambda x: x.get('data', {}),
+               body.get('data', {}).get('children', [])
+            )) # Destructures into post-level data
 
 
 def download_image(post, cat, session: requests.Session) -> bool:
@@ -44,29 +48,3 @@ def download_image(post, cat, session: requests.Session) -> bool:
 def get_dimensions(post):
     '''Gets the dimensions of the post'''
     output = subprocess.Popen(f'ffmpeg -i tmp/{i}.mp4', stdout=subprocess.PIPE, stderr=subprocess.STDOUT, shell=True).communicate()[0].decode('utf-8')
-
-
-def make_video(subreddit, type, posts: List[str], backgrounds, output_dir, length):
-    '''Creates the video which can contain multiple images'''
-    pass
-    
-    # Gets the posts's dimensions
-    dimensions = map(get_dimensions, posts)
-
-    # Generates positions for each image to be placed
-
-
-def get_post_layout(space, posts):
-    """
-    Gets the layout of the posts
-    """
-
-    # Determine the number of rows and columns
-    pass
-
-    # Calculates a position and size for each post
-    pass
-
-    # returns the positions and sizes
-    pass
-

@@ -33,7 +33,7 @@ def main():
     clear(args.output)
 
     # Gets a glob of all the backgrounds
-    backgrounds = [join(args.backgrounds, f) for f in listdir(args.backgrounds) 
+    backgrounds = [join(args.backgrounds, f) for f in listdir(args.backgrounds)
                         if is_video(f)]
     print(f'Found {len(backgrounds)} backgrounds')
 
@@ -127,7 +127,7 @@ def get_valid_languages(captions) -> list:
     for caption in captions:
         if caption.code in VALID_CAPTIONS:
             valid_captions.append(caption)
-    
+
     return valid_captions
 
 
@@ -148,11 +148,11 @@ def get_video_id(url: str) -> str:
         return url.split('v=')[1]
     elif 'youtu.be' in url:
         return url.split('/')[-1]
-    
+
     # check if the url is a video id
     if len(url) == 11:
         return url
-    
+
     raise Exception(f'Invalid URL: {url}')
 
 
@@ -168,7 +168,7 @@ def download_video(video_id: str, output: str = 'tmp'):
     streams = yt.streams.filter(resolution= lambda res: res in VIDEO_QUALITY).order_by('resolution').desc()
     if streams:
         streams.first().download(output, f'{video_id}.mp4')
-    else:  
+    else:
         yt.streams.filter(progressive=True).order_by('resolution').desc().first().download(output, f'{video_id}.mp4')
 
     return yt
@@ -195,7 +195,7 @@ def get_random_clip(duration, clip_duration, overlap=5):
 def upload_clip(index: int, id: str, backgrounds: list, output: str, captions: str, clip_duration: float, overlap: float, quality_settings: str = None):
     """
     Creates a single clip using ffmpeg
-    
+
     Parameters
     ----------
     index: int
@@ -217,21 +217,52 @@ def upload_clip(index: int, id: str, backgrounds: list, output: str, captions: s
     print(f'Making clip {index + 1:3} for video {id}')
 
     quality_settings = quality_settings or '-r 30 -vsync 2 -c:v libx264 -crf 32 -preset ultrafast'
-        
-    background = random.choice(backgrounds) # Randomly chooses a background which remains the same of all clips 
+
+    background = random.choice(backgrounds) # Randomly chooses a background which remains the same of all clips
     bg_duration = get_duration(background)
-        
+
     time_range, start = get_random_clip(bg_duration, clip_duration, overlap)
 
     sub = f"subtitles=tmp/{id}.srt:force_style='Fontname=Consolas,BackColour=&H80000000,Spacing=0.2,Outline=0,Shadow=0.75'," if captions else ""
 
-    system(f'ffmpeg -v quiet -y -i {background} -i {join("tmp", f"{id}.mp4")} -filter_complex "[1:v]{sub}trim=start={index * clip_duration}:duration={clip_duration + overlap},setpts=PTS-STARTPTS,crop=4*min(iw/4\,ih/3):3*min(iw/4\,ih/3),scale=1080:810,pad=iw:ih+10:0:0:black[top],[0:v]trim=start={start}:duration={clip_duration + overlap},setpts=PTS-STARTPTS,crop=1080*min(iw/1080\,ih/1100):1100*min(iw/1080\,ih/1100),scale=1080:1100,[top]vstack=inputs=2:shortest=1,drawtext=fontsize=180:fontcolor=white:x=80:y=750:text=\'{index + 1}\':enable=\'between(t,0,10)\':box=1:boxborderw=10:line_spacing=500:boxcolor=black[out],[1:a]atrim=start={index * clip_duration}:duration={clip_duration + overlap},asetpts=PTS-STARTPTS[aout]" -map \'[out]\' -map \'[aout]\' {quality_settings} {join(output, f"{id}+{index}.mp4")}')
+    filter_complex = [
+        f'[1:v]{sub}trim=start={index * clip_duration}:duration={clip_duration + overlap}',
+        'setpts=PTS-STARTPTS,crop=4*min(iw/4\,ih/3):3*min(iw/4\,ih/3)',
+        'scale=1080:810,pad=iw:ih+10:0:0:black[top]',
+        f'[0:v]trim=start={start}:duration={clip_duration + overlap}',
+        'setpts=PTS-STARTPTS,crop=1080*min(iw/1080\,ih/1100):1100*min(iw/1080\,ih/1100)',
+        'scale=1080:1100',
+        '[top]vstack=inputs=2:shortest=1',
+        f'drawtext=fontsize=180:fontcolor=white:x=80:y=750:text=\'{index + 1}\':enable=\'gte(t\,0)\':box=1:boxborderw=10:line_spacing=10:boxcolor=black[out]',
+        f'[1:a]atrim=start={index * clip_duration}:duration={clip_duration + overlap},asetpts=PTS-STARTPTS[a]',
+        'asetpts=PTS-STARTPTS,[aout]'
+    ]
+
+    filter_complex = ','.join(filter_complex)
+
+    command = [
+        'ffmpeg',
+        '-v quiet',
+        '-y',
+        '-i', background,
+        '-i', join('tmp', f'{id}.mp4'),
+        '-filter_complex', filter_complex,
+        '-map', '[out]',
+        '-map', '[aout]',
+        '-shortest',
+        quality_settings,
+        join(output, f'{id}_{index}.mp4')
+    ]
+
+    system(' '.join(command))
+
+    # system(f'ffmpeg -v quiet -y -i {background} -i {join("tmp", f"{id}.mp4")} -filter_complex "[1:v]{sub}trim=start={index * clip_duration}:duration={clip_duration + overlap},setpts=PTS-STARTPTS,crop=4*min(iw/4\,ih/3):3*min(iw/4\,ih/3),scale=1080:810,pad=iw:ih+10:0:0:black[top],[0:v]trim=start={start}:duration={clip_duration + overlap},setpts=PTS-STARTPTS,crop=1080*min(iw/1080\,ih/1100):1100*min(iw/1080\,ih/1100),scale=1080:1100,[top]vstack=inputs=2:shortest=1,drawtext=fontsize=180:fontcolor=white:x=80:y=750:text=\'{index + 1}\':enable=\'between(t,0,10)\':box=1:boxborderw=10:line_spacing=500:boxcolor=black[out],[1:a]atrim=start={index * clip_duration}:duration={clip_duration + overlap},asetpts=PTS-STARTPTS[aout]" -map \'[out]\' -map \'[aout]\' {quality_settings} {join(output, f"{id}+{index}.mp4")}')
 
 
 def split_clip(id: str, length: float, overlap: float, backgrounds: list, output: str, use_captions: bool = False) -> list:
     """
     Splits a clip into multiple clips
-    
+
     Parameters
     ----------
     id: str
@@ -239,7 +270,7 @@ def split_clip(id: str, length: float, overlap: float, backgrounds: list, output
     length: float
         The length of each clip
     overlap: float
-        The overlap between clips  
+        The overlap between clips
     backgrounds: list
         A list of all the background videos to choose from (must be full path)
     output: str
@@ -262,12 +293,12 @@ def split_clip(id: str, length: float, overlap: float, backgrounds: list, output
     information = []
     for i in range(num_clips):
         upload_clip(
-            index=i, 
-            id=id, 
-            backgrounds=backgrounds, 
-            output=output, 
+            index=i,
+            id=id,
+            backgrounds=backgrounds,
+            output=output,
             captions=None,
-            clip_duration=clip_duration, 
+            clip_duration=clip_duration,
             overlap=overlap
         )
 
