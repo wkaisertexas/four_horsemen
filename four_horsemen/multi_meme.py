@@ -16,7 +16,11 @@ import pandas as pd
 
 from four_horsemen.utils import *
 
-ALLOWED_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif']
+import shutup
+
+
+ALLOWED_IMG_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif']
+ALLOWED_VIDEO_EXTENSIONS = ['mp4', 'mov', 'avi', 'mkv']
 
 REQUESTYPES = ['top', 'hot', 'new', 'rising', 'controversial']
 API_KEYS_OF_INTEREST = ['id', 'subreddit', 'title', 'ups', 'downs', 'upvote_ratio', 'permalink', 'url']
@@ -44,7 +48,8 @@ def main():
     os.system(f'rm {args.output}/*')
 
     subreddits = [f for f in open(args.input, 'r', encoding='utf-8').read().strip().split('\n')]
-    backgrounds = [f for f in os.listdir(args.backgrounds) if any(f.endswith(ext) for ext in ALLOWED_EXTENSIONS)]
+    backgrounds = [f for f in os.listdir(args.backgrounds)
+                   if any(f.endswith(ext) for ext in ALLOWED_VIDEO_EXTENSIONS)]
 
     print(f'Found {len(subreddits)} subreddits')
     frame = get_subreddits(args, subreddits)
@@ -58,12 +63,14 @@ def main():
 
     video_info = make_info(frame, backgrounds, videos_per_category)
 
-    print(video_info)
+    input()
+    print(video_info[:10])
+    input()
 
-    success, failed = create_videos(video_info, args.output) 
-    
-    print(f'Successfully created {success:4d} videos')
-    print(f'Failed to create {failed:4d} videos')
+    success, failed = create_videos(video_info, args.output)
+
+    print(f'Successfully created {len(success):4d} videos')
+    print(f'Failed to create     {len(failed):4d} videos')
 
 def get_args():
     args = ArgumentParser()
@@ -104,12 +111,13 @@ def get_subreddits(args, subreddits):
                 # post 'url' can also be a list of urls
                 ending = post['url'].split('.')[-1]
 
-                if ending not in ALLOWED_EXTENSIONS:
+                if ending not in ALLOWED_IMG_EXTENSIONS:
                     continue
 
-                frame = frame.append({key: post[key] for key in API_KEYS_OF_INTEREST} | {
-            'from': post_type,
-            }, ignore_index=True)
+                with shutup.mute_warnings:
+                    frame = frame.append({key: post[key] for key in API_KEYS_OF_INTEREST} | {
+                'from': post_type,
+                }, ignore_index=True)
 
     return frame
 
@@ -153,13 +161,14 @@ def make_video_info(posts: pd.DataFrame, subreddit: str, backgrounds: List, cate
         'subreddit': subreddit,
         'category': category,
 
-        'images': p,
+        'images': p['url'].tolist(),
+        'n': n,
         'background': choice(backgrounds),
         'speed': choice(BACKGROUND_SPEED),
         'length': choice(LENGTHS),
     }
 
-def create_videos(info: List[dict]):
+def create_videos(info: List[dict], output: str = 'output'):
     """
     Creates the videos from the information
 
@@ -169,17 +178,19 @@ def create_videos(info: List[dict]):
     failed = []
     for i in info:
         try:
-            create_video(i)
+            create_video(i, output)
             sucess.append(i)
-        except:
+        except VideoCreationError:
+            print('error')
             failed.append(i)
 
     return sucess, failed
 
-def create_video(info: dict):
+def create_video(info: dict, output: str = 'output'):
     """
     Creates a video from the information
     """
+    output = f'{output}/{info["id"]}.mp4'
 
     command = [
         'ffmpeg',
@@ -188,23 +199,24 @@ def create_video(info: dict):
         '-loop', '1',
         '-i', f'backgrounds/{info["background"]}',
 
-        '-filter_complex', f'"{filter_complex(info)}"'
-
+        '-filter_complex', f'"{get_filter_complex(info)}"',
 
         # output is the info['id'] + '.mp4'
-        f'tmp/{info["id"]}.mp4',
-
-        
+        output,
     ]
 
     command = ' '.join(command)
-    
+
     os.system(command)
 
-    # checks if the video was not created, throws if not
+    # checks if output exists
+    if not os.path.exists(output):
+        print("video creatoin failed")
+        raise VideoCreationError(f'Failed to create video for {info["id"]}')
 
 
-def filter_complex(info: dict):
+
+def get_filter_complex(info: dict):
     """
     Creates the filter_complex command for ffmpeg
     """
@@ -213,7 +225,8 @@ def filter_complex(info: dict):
     layout = get_post_layout(DIMENSIONS, num_images)
 
     filter_complex = [
-        f'[0:v]scale={info["length"] * info["speed"]}:1080:force_original_aspect_ratio=decrease,pad={info["length"] * info["speed"]}:1080:(ow-iw)/2:(oh-ih)/2,setsar=1[v0];'
+        f'[0:v]scale={info["length"] * info["speed"]}:1080:force_original_aspect_ratio=decrease',
+        f'pad={info["length"] * info["speed"]}:1080:(ow-iw)/2:(oh-ih)/2,setsar=1[v0]'
 
         # Overlays the images
         *[f'[v{i}][{i+1}:v]overlay={x}:{y}[v{i+1}]' for i, (x, y) in enumerate(layout)],
@@ -225,7 +238,7 @@ def filter_complex(info: dict):
 
 
 
-def get_post_layout(dimensions: tuple(int, int), num_images: int):
+def get_post_layout(dimensions: tuple, num_images: int):
     """
     Gets the layout of the posts
     """
@@ -236,45 +249,33 @@ def get_post_layout(dimensions: tuple(int, int), num_images: int):
     ]
 
 
-def get_pos(i: int, n: int, rows: int, columns: int, dimensions: tuple(int, int)):
+def get_pos(i: int, n: int, rows: int, columns: int, dimensions: tuple):
     """
     Gets the position of the post
 
-    Changes depending on whether or not the post is in a full or half row
+    Changes depending on whether or not the post is in a full row or not
+
+    Parameters
+    i : int
+        The index of the position to get
+    n : int
+        The number of posts
+    rows : int
+        The number of rows
+    columns : int
+        The number of columns
+    dimensions : tuple (of ints)
+        The dimensions of the space to take up
     """
     x, y = dimensions
+    width, height = x // columns, y // rows
 
-    # Gets the width and height of each post
-    width = x / columns
-    height = y / rows
-
-    # Gets the row and column of the post
     row = i // columns
     column = i % columns
 
-    # checks is the post is in a full row or not
-    if n % 2 == 1 and row == rows - 1:
-        # Gets the width of the full row
-        full_width = (n // 2) * width
+    x_offset = (columns * rows - n) * width // 2 if row == rows - 1 else 0
 
-        # Gets the width of the half row
-        half_width = (n - n // 2) * width / 2
-
-        # Gets the width of the post
-        post_width = (n - n // 2) * width
-
-        # Gets the position of the post
-        x = (full_width + half_width) - post_width
-        y = row * height
-
-        return x, y
-    
-    # Gets the position of the post
-    x = column * width
-    y = row * height
-
-    return x, y
-
+    return column * width + x_offset, row * height
 
 def get_rows_columns(n):
     """
@@ -301,6 +302,13 @@ def get_rows_columns(n):
     else:
         raise ValueError(f'Number of posts {n} is not supported')
 
+
+class VideoCreationError(Exception):
+    """
+    Raised when a video failes to be created.
+
+    Due to a problem with the FFmpeg command
+    """
 
 if __name__ == '__main__':
     main()

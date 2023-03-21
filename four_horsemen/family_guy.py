@@ -18,6 +18,8 @@ VALID_CAPTIONS = ['en', 'en-US', 'a.en', 'a.en-US']
 VIDEO_EXTENSIONS = ['mov', 'mp4', 'avi', 'mkv', 'webm'] # must be supported by ffmpeg
 VIDEO_QUALITY = ['720p', '480p', '360p', '240p', '144p'] # must be supported by pytube
 
+import traceback
+
 def main():
     """
     Main function
@@ -50,6 +52,8 @@ def main():
             print(f'Time taken to split video: {time() - curr_time:.2f} seconds')
         except Exception as e:
             print(f'Failed to create video: {id}\nException:\n {e}')
+            # prints out the exception's stack trace
+            traceback.print_exc()
             failed.append(id)
 
     return failed
@@ -166,6 +170,7 @@ def download_video(video_id: str, output: str = 'tmp'):
 
     # saves a little bit of time by not downloading the highest quality video
     streams = yt.streams.filter(resolution= lambda res: res in VIDEO_QUALITY).order_by('resolution').desc()
+        
     if streams:
         streams.first().download(output, f'{video_id}.mp4')
     else:
@@ -228,7 +233,8 @@ def upload_clip(index: int, id: str, backgrounds: list, output: str, captions: s
     filter_complex = [
         f'[1:v]{sub}trim=start={index * clip_duration}:duration={clip_duration + overlap}',
         'setpts=PTS-STARTPTS,crop=4*min(iw/4\,ih/3):3*min(iw/4\,ih/3)',
-        'scale=1080:810,pad=iw:ih+10:0:0:black[top]',
+        'scale=1080:810',
+        'pad=iw:ih+10:0:0:black[top]',
         f'[0:v]trim=start={start}:duration={clip_duration + overlap}',
         'setpts=PTS-STARTPTS,crop=1080*min(iw/1080\,ih/1100):1100*min(iw/1080\,ih/1100)',
         'scale=1080:1100',
@@ -247,8 +253,8 @@ def upload_clip(index: int, id: str, backgrounds: list, output: str, captions: s
         '-i', background,
         '-i', join('tmp', f'{id}.mp4'),
         '-filter_complex', filter_complex,
-        '-map', '[out]',
-        '-map', '[aout]',
+        '-map', '\'[out]\'',
+        '-map', '\'[aout]\'',
         '-shortest',
         quality_settings,
         join(output, f'{id}_{index}.mp4')
