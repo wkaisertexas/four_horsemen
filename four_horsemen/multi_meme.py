@@ -7,8 +7,6 @@ Used to Rank SubReddits by virality
 TEST_CMD:
 python3 four_horsemen/multi_meme.py -i subreddits.txt -b backgrounds -n 50 -l 30 -m meta.xlsx -o output
 """
-from four_horsemen.utils import get_posts
-
 import os
 from argparse import ArgumentParser
 from random import choice, randint
@@ -18,9 +16,11 @@ from typing import List
 
 import shutup
 
+from four_horsemen.utils import get_posts, download_image
 
 ALLOWED_IMG_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif']
 ALLOWED_VIDEO_EXTENSIONS = ['mp4', 'mov', 'avi', 'mkv']
+ALLOWED_AUDIO_EXTENSIONS = ['mp3', 'wav', 'm4a']
 
 REQUESTYPES = ['top', 'hot', 'new', 'rising', 'controversial']
 API_KEYS_OF_INTEREST = ['id', 'subreddit', 'title', 'ups', 'downs', 'upvote_ratio', 'permalink', 'url']
@@ -50,6 +50,7 @@ def main():
     subreddits = [f for f in open(args.input, 'r', encoding='utf-8').read().strip().split('\n')]
     backgrounds = [f for f in os.listdir(args.backgrounds)
                    if any(f.endswith(ext) for ext in ALLOWED_VIDEO_EXTENSIONS)]
+    audios = [f for f in os.listdir(args.audio) if any(f.endswith(ext) for ext in ALLOWED_AUDIO_EXTENSIONS)]
 
     print(f'Found {len(subreddits)} subreddits')
     frame = get_subreddits(args, subreddits)
@@ -61,7 +62,7 @@ def main():
     videos_per_subreddit = int(args.number) // len(subreddits) + 1
     videos_per_category = videos_per_subreddit // len(REQUESTYPES) + 1
 
-    video_info = make_info(frame, backgrounds, videos_per_category)
+    video_info = make_info(frame, backgrounds, audios, videos_per_category)
 
     input()
     print(video_info[:10])
@@ -71,6 +72,7 @@ def main():
 
     print(f'Successfully created {len(success):4d} videos')
     print(f'Failed to create     {len(failed):4d} videos')
+
 
 def get_args():
     """
@@ -83,6 +85,7 @@ def get_args():
     args.add_argument('-l', '--length', help='Length of the output video in seconds', default=30)
     args.add_argument('-t', '--token', help='Token for Reddit API') # Could be optional
     args.add_argument('-m', '--meta', help='Meta data for each video', default='meta.xlsx')
+    args.add_argument('-a', '--audio', help='Audio directory', default='audios')
     args.add_argument('-o', '--output', help='Output directory', default='output')
 
     args = args.parse_args()
@@ -117,26 +120,31 @@ def get_subreddits(args, subreddits):
                     continue
 
                 with shutup.mute_warnings:
-                    frame = frame.append({key: post[key] for key in API_KEYS_OF_INTEREST} | {
-                'from': post_type,
-                }, ignore_index=True)
+                    frame = frame.append(
+                        {key: post[key] for key in API_KEYS_OF_INTEREST} |
+                        {
+                            'from': post_type, 
+                        }
+                , ignore_index=True)
 
     return frame
 
 
-def make_info(frame: pd.DataFrame, backgrounds: List, videos_per_category: int):
+def make_info(frame: pd.DataFrame, backgrounds: List, audios: List, videos_per_category: int):
     """
     Makes the information for each video
     """
     return_array = []
 
     for subreddit, posts in frame.groupby('subreddit'):
-        return_array += make_subreddit_info(videos_per_category, posts, subreddit, backgrounds)
+        return_array += make_subreddit_info(
+            videos_per_category, posts, subreddit, backgrounds, audios
+            )
 
     return return_array
 
 
-def make_subreddit_info(count: int, posts: pd.DataFrame, subreddit, backgrounds: List):
+def make_subreddit_info(count: int, posts: pd.DataFrame, subreddit, backgrounds: List, audios: List):
     """
     Makes a list of dictionaries containing the information for each video
     """
@@ -144,12 +152,12 @@ def make_subreddit_info(count: int, posts: pd.DataFrame, subreddit, backgrounds:
 
     for category in REQUESTYPES:
         for _ in range(count):
-            return_array.append(make_video_info(posts, subreddit, backgrounds, category))
+            return_array.append(make_video_info(posts, subreddit, backgrounds, audios, category))
 
     return return_array
 
 
-def make_video_info(posts: pd.DataFrame, subreddit: str, backgrounds: List, category: str):
+def make_video_info(posts: pd.DataFrame, subreddit: str, backgrounds: List, audios: List, category: str):
     '''
     Creates the video which can contain multiple images
     '''
@@ -165,6 +173,7 @@ def make_video_info(posts: pd.DataFrame, subreddit: str, backgrounds: List, cate
 
         'images': p['url'].tolist(),
         'n': n,
+        'audio': choice(audios),
         'background': choice(backgrounds),
         'speed': choice(BACKGROUND_SPEED),
         'length': choice(LENGTHS),
@@ -194,6 +203,8 @@ def create_video(info: dict, output: str = 'output'):
     """
     Creates a video from the information
     """
+    download_images(info['images'])
+
     output = f'{output}/{info["id"]}.mp4'
 
     command = [
@@ -206,6 +217,10 @@ def create_video(info: dict, output: str = 'output'):
 
         '-loop', '1',
         '-i', f'backgrounds/{info["background"]}',
+
+        # '-i', f'audio/{choice(AUDIO)}',
+
+        *sum([['-i', f] for f in info['images']], []),
 
         '-filter_complex', f'"{get_filter_complex(info)}"',
 
@@ -222,9 +237,15 @@ def create_video(info: dict, output: str = 'output'):
 
     # checks if output exists
     if not os.path.exists(output):
-        print("video creatoin failed")
+        print("video creation failed")
         raise VideoCreationError(f'Failed to create video for {info["id"]}')
 
+def download_images(urls: List[str]) -> None:
+    """
+    Downloads the images from the posts
+    """
+    for url in urls:
+        download_image(url)
 
 def get_output_settings() -> str:
     """
@@ -244,7 +265,7 @@ def get_filter_complex(info: dict):
     """
     # Gets the layout of the posts
     num_images = len(info['images'])
-    layout = get_post_layout(DIMENSIONS, num_images)
+    layout = get_post_layout(DIMENSIONS['imgs'], num_images)
     layout = [f'[{i}][{i+1}:v]overlay={x}:{y}[{i+1}]' for i, (x, y) in enumerate(layout)]
 
     filter_complex = [
@@ -299,7 +320,7 @@ def get_pos(i: int, n: int, rows: int, columns: int, dimensions: tuple):
     return column * width + x_offset, row * height
 
 
-def get_rows_columns(n):
+def get_rows_columns(n: int):
     """
     Gets the number of rows and columns for the posts
     """

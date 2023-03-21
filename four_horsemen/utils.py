@@ -22,16 +22,16 @@ def get_posts(subreddit: str, type: str, limit: int, api_key: str):
             )) # Destructures into post-level data
 
 
-def download_image(post, cat, session: requests.Session) -> bool:
+def download_image(url: str) -> bool:
     '''Downloads the image from the post'''
-    extension = post['url'].split('.')[-1]
-    save_path = f'tmp/{post["subreddit"]}_{cat}_{post["id"]}.{extension}'
 
     # Starts downloading the image
-    req = s.get(post['url'])
+    req = requests.get(url, timeout=20)
+
+    save_path = f'tmp/{url.split("/")[-1]}'
 
     if req.status_code != 200:
-        print(f'Failed to download {post.get("url", "unknown")}')
+        print(f'Failed to download {url}')
         return False
 
     # Saves the image
@@ -39,12 +39,12 @@ def download_image(post, cat, session: requests.Session) -> bool:
         for chunk in req.iter_content(chunk_size=1024):
             if chunk:
                 f.write(chunk)
-                
-    # Updates the dataframe
-    post['image'] = save_path
+
     return True
 
 
-def get_dimensions(post):
+def get_dimensions(post_url: str):
     '''Gets the dimensions of the post'''
-    output = subprocess.Popen(f'ffmpeg -i tmp/{i}.mp4', stdout=subprocess.PIPE, stderr=subprocess.STDOUT, shell=True).communicate()[0].decode('utf-8')
+    output = subprocess.Popen(f'ffprobe -i tmp/{post_url}', stdout=subprocess.PIPE, stderr=subprocess.STDOUT, shell=True).communicate()[0].decode('utf-8')
+
+    return tuple(map(int, output.split('Video:')[1].split(',')[1].split(' ')[1].split('x')))
