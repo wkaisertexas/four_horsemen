@@ -7,14 +7,14 @@ Used to Rank SubReddits by virality
 TEST_CMD:
 python3 four_horsemen/multi_meme.py -i subreddits.txt -b backgrounds -n 50 -l 30 -m meta.xlsx -o output
 """
+from four_horsemen.utils import get_posts
 
 import os
 from argparse import ArgumentParser
 from random import choice, randint
-
 import pandas as pd
 
-from four_horsemen.utils import *
+from typing import List
 
 import shutup
 
@@ -58,8 +58,8 @@ def main():
     print(frame.head())
 
     # Determines the number of videos per subreddit
-    videos_per_subreddit = int(args.number) // len(subreddits) + 1 # +1 to account for rounding down
-    videos_per_category = videos_per_subreddit // len(REQUESTYPES) + 1 # +1 to account for rounding down
+    videos_per_subreddit = int(args.number) // len(subreddits) + 1
+    videos_per_category = videos_per_subreddit // len(REQUESTYPES) + 1
 
     video_info = make_info(frame, backgrounds, videos_per_category)
 
@@ -73,6 +73,9 @@ def main():
     print(f'Failed to create     {len(failed):4d} videos')
 
 def get_args():
+    """
+    Gets the cli arguments
+    """
     args = ArgumentParser()
     args.add_argument('-i', '--input', help='Input subreddits list')
     args.add_argument('-b', '--backgrounds', help='Backgrounds directory')
@@ -108,7 +111,6 @@ def get_subreddits(args, subreddits):
                 continue
 
             for post in posts:
-                # post 'url' can also be a list of urls
                 ending = post['url'].split('.')[-1]
 
                 if ending not in ALLOWED_IMG_EXTENSIONS:
@@ -168,6 +170,7 @@ def make_video_info(posts: pd.DataFrame, subreddit: str, backgrounds: List, cate
         'length': choice(LENGTHS),
     }
 
+
 def create_videos(info: List[dict], output: str = 'output'):
     """
     Creates the videos from the information
@@ -186,6 +189,7 @@ def create_videos(info: List[dict], output: str = 'output'):
 
     return sucess, failed
 
+
 def create_video(info: dict, output: str = 'output'):
     """
     Creates a video from the information
@@ -196,16 +200,23 @@ def create_video(info: dict, output: str = 'output'):
         'ffmpeg',
         '-y',
 
+        '-hide_banner',
+        '-loglevel', 'error',
+        '-v', 'quiet',
+
         '-loop', '1',
         '-i', f'backgrounds/{info["background"]}',
 
         '-filter_complex', f'"{get_filter_complex(info)}"',
 
-        # output is the info['id'] + '.mp4'
+        *get_output_settings(),
         output,
     ]
 
     command = ' '.join(command)
+
+    print(f'Creating video for {info["id"]}')
+    print(command)
 
     os.system(command)
 
@@ -215,6 +226,17 @@ def create_video(info: dict, output: str = 'output'):
         raise VideoCreationError(f'Failed to create video for {info["id"]}')
 
 
+def get_output_settings() -> str:
+    """
+    Get the output settings for ffmpeg
+    """
+    return [
+        '-c:v', 'libx264',
+        '-preset', 'slow',
+        '-crf', '18',
+        '-pix_fmt', 'yuv420p',
+    ]
+
 
 def get_filter_complex(info: dict):
     """
@@ -223,13 +245,12 @@ def get_filter_complex(info: dict):
     # Gets the layout of the posts
     num_images = len(info['images'])
     layout = get_post_layout(DIMENSIONS, num_images)
+    layout = [f'[{i}][{i+1}:v]overlay={x}:{y}[{i+1}]' for i, (x, y) in enumerate(layout)]
 
     filter_complex = [
         f'[0:v]scale={info["length"] * info["speed"]}:1080:force_original_aspect_ratio=decrease',
-        f'pad={info["length"] * info["speed"]}:1080:(ow-iw)/2:(oh-ih)/2,setsar=1[v0]'
-
-        # Overlays the images
-        *[f'[v{i}][{i+1}:v]overlay={x}:{y}[v{i+1}]' for i, (x, y) in enumerate(layout)],
+        f'pad={info["length"] * info["speed"]}:1080:(ow-iw)/2:(oh-ih)/2,setsar=1[v0]',
+        *layout,
     ]
 
     filter_complex = ','.join(filter_complex)
@@ -277,6 +298,7 @@ def get_pos(i: int, n: int, rows: int, columns: int, dimensions: tuple):
 
     return column * width + x_offset, row * height
 
+
 def get_rows_columns(n):
     """
     Gets the number of rows and columns for the posts
@@ -309,6 +331,7 @@ class VideoCreationError(Exception):
 
     Due to a problem with the FFmpeg command
     """
+
 
 if __name__ == '__main__':
     main()
