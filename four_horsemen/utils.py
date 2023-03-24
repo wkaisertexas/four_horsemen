@@ -58,7 +58,7 @@ def get_dimensions(file_path: str):
 
     return tuple(map(int, dimensions_line.split('x')))
 
-def get_length(file_path: str):
+def get_media_length(file_path: str):
     '''Get the length of a video or audio file'''
     output = subprocess.Popen(
         f'ffprobe -i {file_path}', stdout=subprocess.PIPE, stderr=subprocess.STDOUT, shell=True

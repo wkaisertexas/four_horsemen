@@ -5,25 +5,28 @@ Create a TikTok video from a subreddit's memes
 Used to Rank SubReddits by virality
 
 TEST_CMD:
-python3 four_horsemen/multi_meme.py -i subreddits.txt -b backgrounds -n 50 -l 30 -m meta.xlsx -o output
+python3 four_horsemen/multi_meme.py -i subreddits.txt -b backgrounds\
+    -n 50 -l 30 -m meta.xlsx -o output
 """
 import os
-from argparse import ArgumentParser
-from random import choice, randint
-import pandas as pd
-
 from typing import List
+from argparse import ArgumentParser
+from random import choice, randint, random
 
+import pandas as pd
 import shutup
 
-from four_horsemen.utils import get_posts, download_image
+from four_horsemen.utils import get_posts, download_image, get_dimensions, get_media_length
 
 ALLOWED_IMG_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif']
 ALLOWED_VIDEO_EXTENSIONS = ['mp4', 'mov', 'avi', 'mkv']
 ALLOWED_AUDIO_EXTENSIONS = ['mp3', 'wav', 'm4a']
 
+OUTPUT_ENDING = 'mp4'
+
 REQUESTYPES = ['top', 'hot', 'new', 'rising', 'controversial']
-API_KEYS_OF_INTEREST = ['id', 'subreddit', 'title', 'ups', 'downs', 'upvote_ratio', 'permalink', 'url']
+API_KEYS_OF_INTEREST = ['id', 'subreddit', 'title', 'ups', 'downs',
+                        'upvote_ratio', 'permalink', 'url']
 
 NUM_IMAGES = [1, 2, 3, 4, 5, 6] # Up to six images per video
 BACKGROUND_SPEED = [0, 0.5, 1, 1.5, 2, 2.5, 3]
@@ -47,10 +50,17 @@ def main():
     os.system('rm tmp/*')
     os.system(f'rm {args.output}/*')
 
-    subreddits = [f for f in open(args.input, 'r', encoding='utf-8').read().strip().split('\n')]
-    backgrounds = [f for f in os.listdir(args.backgrounds)
-                   if any(f.endswith(ext) for ext in ALLOWED_VIDEO_EXTENSIONS)]
-    audios = [f for f in os.listdir(args.audio) if any(f.endswith(ext) for ext in ALLOWED_AUDIO_EXTENSIONS)]
+    subreddits = [
+        f for f in open(args.input, 'r', encoding='utf-8').read().strip().split('\n')
+        ]
+    backgrounds = [
+        f for f in os.listdir(args.backgrounds)
+        if any(f.endswith(ext) for ext in ALLOWED_VIDEO_EXTENSIONS)
+        ]
+    audios = [
+        f for f in os.listdir(args.audio)
+        if any(f.endswith(ext) for ext in ALLOWED_AUDIO_EXTENSIONS)
+        ]
 
     print(f'Found {len(subreddits)} subreddits')
     frame = get_subreddits(args, subreddits)
@@ -64,7 +74,6 @@ def main():
 
     video_info = make_info(frame, backgrounds, audios, videos_per_category)
 
-    input()
     print(video_info[:10])
     input()
 
@@ -157,13 +166,14 @@ def make_subreddit_info(count: int, posts: pd.DataFrame, subreddit, backgrounds:
     return return_array
 
 
-def make_video_info(posts: pd.DataFrame, subreddit: str, backgrounds: List, audios: List, category: str):
+def make_video_info(posts: pd.DataFrame, subreddit: str,
+    backgrounds: List, audios: List, category: str) -> dict:
     '''
     Creates the video which can contain multiple images
     '''
 
-    n = choice(NUM_IMAGES)
-    p = posts.sample(n)
+    image_count = choice(NUM_IMAGES)
+    posts = posts.sample(image_count)
 
     return {
         # Metadata
@@ -171,8 +181,8 @@ def make_video_info(posts: pd.DataFrame, subreddit: str, backgrounds: List, audi
         'subreddit': subreddit,
         'category': category,
 
-        'images': p['url'].tolist(),
-        'n': n,
+        'images': posts['url'].tolist(),
+        'n': image_count,
         'audio': choice(audios),
         'background': choice(backgrounds),
         'speed': choice(BACKGROUND_SPEED),
@@ -209,22 +219,10 @@ def create_video(info: dict, output: str = 'output'):
 
     command = [
         'ffmpeg',
-        '-y',
-
-        '-hide_banner',
-        '-loglevel', 'error',
-        '-v', 'quiet',
-
-        '-loop', '1',
-        '-i', f'backgrounds/{info["background"]}',
-
-        '-i', f'audio/{info["audio"]}',
-
-        *sum([['-i', f] for f in info['images']], []),
-
+        *get_input_settings(),
+        *get_inputs(info['images'], info['background'], info['audio']),
         '-filter_complex', f'"{get_filter_complex(info)}"',
-
-        *get_output_settings(),
+        *get_output_settings(output, info['id']),
         output,
     ]
 
@@ -235,7 +233,6 @@ def create_video(info: dict, output: str = 'output'):
 
     os.system(command)
 
-    # checks if output exists
     if not os.path.exists(output):
         print("video creation failed")
         raise VideoCreationError(f'Failed to create video for {info["id"]}')
@@ -247,17 +244,42 @@ def download_images(urls: List[str]) -> None:
     for url in urls:
         download_image(url)
 
-def get_output_settings() -> str:
+def get_input_settings() -> List[str]:
     """
-    Get the output settings for ffmpeg
+    Gets the input settings for ffmpeg
+    """
+    return [
+        '-y',
+        '-hide_banner',
+        '-loglevel', 'error',
+        '-v', 'quiet',
+    ]
+
+def get_output_settings(output: str, video_id: int) -> List[str]:
+    """
+    Get the output settings for the FFmpeg command
     """
     return [
         '-c:v', 'libx264',
         '-preset', 'slow',
         '-crf', '18',
         '-pix_fmt', 'yuv420p',
+        '-c:a', 'aac',
+        '-b:a', '192k',
+        '-shortest',
+        '-movflags', '+faststart',
+        f'{output}/{video_id}.{OUTPUT_ENDING}',
     ]
 
+def get_inputs(images, background, audio):
+    """
+    Gets the inputs for the FFmpeg command
+    """
+    return [
+        '-i', f'backgrounds/{background}',
+        '-i', f'audio/{audio}',
+        *sum([['-i', f] for f in images], []),
+    ]
 
 def get_filter_complex(info: dict):
     """
@@ -272,7 +294,7 @@ def get_filter_complex(info: dict):
         f'[0:v]scale={info["length"] * info["speed"]}:1080:force_original_aspect_ratio=decrease',
         f'pad={info["length"] * info["speed"]}:1080:(ow-iw)/2:(oh-ih)/2,setsar=1[v0]',
         *layout,
-        get_randomized_audio(info["audio"], info["length"]),
+        *get_randomized_audio(info["audio"], info["length"]),
     ]
 
     filter_complex = ','.join(filter_complex)
@@ -280,20 +302,24 @@ def get_filter_complex(info: dict):
     return filter_complex
 
 
-def get_randomized_audio(audio: str, length: int) -> str:
+def get_randomized_audio(audio: str, length: int) -> List[str]:
     """
     Gets a randomized audio file
     """
     # gets the length of the audio file
+    audio_length = get_media_length(audio)
 
+    # gets the start time of the audio file
+    start_time = random() * (audio_length - length)
+    end_time = start_time + length
 
     audio_filter = [
         'asetpts=PTS-STARTPTS',
-        f'atrim=0:{length}',
-        f'asetpts=PTS-STARTPTS[audio{i}]',
+        f'atrim={start_time:.2f}:{end_time:.2f}',
+        f'asetpts=PTS-STARTPTS[{audio}]',
     ]
 
-    return ','.join(audio_filter)
+    return audio_filter
 
 def get_post_layout(dimensions: tuple, num_images: int):
     """
@@ -302,7 +328,8 @@ def get_post_layout(dimensions: tuple, num_images: int):
     rows, columns = get_rows_columns(num_images)
 
     return [
-        get_pos(post_index, num_images, rows, columns, dimensions) for post_index in range(num_images)
+        get_pos(post_index, num_images, rows, columns, dimensions) 
+        for post_index in range(num_images)
     ]
 
 
@@ -324,8 +351,8 @@ def get_pos(curr_index: int, num_posts: int, rows: int, columns: int, dimensions
     dimensions : tuple (of ints)
         The dimensions of the space to take up
     """
-    x, y = dimensions
-    width, height = x // columns, y // rows
+    x_dim, y_dim = dimensions
+    width, height = x_dim // columns, y_dim // rows
 
     row = curr_index // columns
     column = curr_index % columns
