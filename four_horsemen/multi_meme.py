@@ -218,7 +218,7 @@ def create_video(info: dict, output: str = 'output'):
         '-loop', '1',
         '-i', f'backgrounds/{info["background"]}',
 
-        # '-i', f'audio/{choice(AUDIO)}',
+        '-i', f'audio/{info["audio"]}',
 
         *sum([['-i', f] for f in info['images']], []),
 
@@ -272,6 +272,7 @@ def get_filter_complex(info: dict):
         f'[0:v]scale={info["length"] * info["speed"]}:1080:force_original_aspect_ratio=decrease',
         f'pad={info["length"] * info["speed"]}:1080:(ow-iw)/2:(oh-ih)/2,setsar=1[v0]',
         *layout,
+        get_randomized_audio(info["audio"], info["length"]),
     ]
 
     filter_complex = ','.join(filter_complex)
@@ -279,6 +280,20 @@ def get_filter_complex(info: dict):
     return filter_complex
 
 
+def get_randomized_audio(audio: str, length: int) -> str:
+    """
+    Gets a randomized audio file
+    """
+    # gets the length of the audio file
+
+
+    audio_filter = [
+        'asetpts=PTS-STARTPTS',
+        f'atrim=0:{length}',
+        f'asetpts=PTS-STARTPTS[audio{i}]',
+    ]
+
+    return ','.join(audio_filter)
 
 def get_post_layout(dimensions: tuple, num_images: int):
     """
@@ -287,11 +302,11 @@ def get_post_layout(dimensions: tuple, num_images: int):
     rows, columns = get_rows_columns(num_images)
 
     return [
-        get_pos(i, num_images, rows, columns, dimensions) for i in range(num_images)
+        get_pos(post_index, num_images, rows, columns, dimensions) for post_index in range(num_images)
     ]
 
 
-def get_pos(i: int, n: int, rows: int, columns: int, dimensions: tuple):
+def get_pos(curr_index: int, num_posts: int, rows: int, columns: int, dimensions: tuple):
     """
     Gets the position of the post
 
@@ -312,38 +327,38 @@ def get_pos(i: int, n: int, rows: int, columns: int, dimensions: tuple):
     x, y = dimensions
     width, height = x // columns, y // rows
 
-    row = i // columns
-    column = i % columns
+    row = curr_index // columns
+    column = curr_index % columns
 
-    x_offset = (columns * rows - n) * width // 2 if row == rows - 1 else 0
+    x_offset = (columns * rows - num_posts) * width // 2 if row == rows - 1 else 0
 
     return column * width + x_offset, row * height
 
 
-def get_rows_columns(n: int):
+def get_rows_columns(num_posts: int):
     """
     Gets the number of rows and columns for the posts
     """
-    if n == 1:
+    if num_posts == 1:
         return 1, 1
-    elif n == 2:
+    elif num_posts == 2:
         return 1, 2
-    elif n == 3:
+    elif num_posts == 3:
         return 2, 2
-    elif n == 4:
+    elif num_posts == 4:
         return 2, 2
-    elif n == 5:
+    elif num_posts == 5:
         return 2, 3
-    elif n == 6:
+    elif num_posts == 6:
         return 2, 3
-    elif n == 7:
+    elif num_posts == 7:
         return 3, 3
-    elif n == 8:
+    elif num_posts == 8:
         return 3, 3
-    elif n == 9:
+    elif num_posts == 9:
         return 3, 3
     else:
-        raise ValueError(f'Number of posts {n} is not supported')
+        raise ValueError(f'Number of posts {num_posts} is not supported')
 
 
 class VideoCreationError(Exception):
