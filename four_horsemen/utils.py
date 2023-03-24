@@ -7,6 +7,9 @@ from typing import List
 
 import requests
 
+TIMEOUT = 40
+
+SESSION = requests.Session()
 
 def get_posts(subreddit: str, post_type: str, limit: int, api_key: str) -> List[dict]:
     '''
@@ -14,12 +17,14 @@ def get_posts(subreddit: str, post_type: str, limit: int, api_key: str) -> List[
     '''
     url = f'https://www.reddit.com/r/{subreddit}/{post_type}.json?limit={limit}'
 
+    session = SESSION or requests.Session()
+
     print(f'Getting posts from {url}')
     headers = {'User-Agent': 'Mozilla/5.0'}
     if api_key:
-        posts = requests.get(url, headers=headers, auth=api_key, timeout=20)
+        posts = session.get(url, headers=headers, auth=api_key, timeout=20)
     else:
-        posts = requests.get(url, headers=headers, timeout=20)
+        posts = session.get(url, headers=headers, timeout=20)
     body = json.loads(posts.text)
 
     return list(map(
@@ -31,7 +36,8 @@ def get_posts(subreddit: str, post_type: str, limit: int, api_key: str) -> List[
 def download_image(url: str) -> bool:
     '''Downloads the image from the post'''
 
-    image = requests.get(url, timeout=20)
+    session = SESSION or requests.Session()
+    image = session.get(url, timeout=TIMEOUT)
 
     save_path = f'tmp/{url.split("/")[-1]}'
 

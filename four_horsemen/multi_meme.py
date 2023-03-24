@@ -30,13 +30,16 @@ API_KEYS_OF_INTEREST = ['id', 'subreddit', 'title', 'ups', 'downs',
 
 NUM_IMAGES = [1, 2, 3, 4, 5, 6] # Up to six images per video
 BACKGROUND_SPEED = [0, 0.5, 1, 1.5, 2, 2.5, 3]
-LENGTHS = [5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60]
+LENGTHS = [5, 10, 15]
+RAND_SHIFT = 20
 
 DIMENSIONS = {
     'output': (1080, 1920),
-    'imgs': (800, 1080),
-    'imgs_center': (540, 540)
+    'imgs': (980, 1820),
+    'imgs_center': (540, 930)
 }
+
+SMALLER = 10
 
 # IMPLEMENTATION
 
@@ -66,17 +69,15 @@ def main():
     frame = get_subreddits(args, subreddits)
     frame.to_excel(args.meta, index=False)
 
-    print(frame.head())
-
     # Determines the number of videos per subreddit
     videos_per_subreddit = int(args.number) // len(subreddits) + 1
     videos_per_category = videos_per_subreddit // len(REQUESTYPES) + 1
+    print("--------------------------------------------------")
+    print(f'Creating {videos_per_subreddit} videos per subreddit')
 
     video_info = make_info(frame, backgrounds, audios, videos_per_category)
 
-    print(video_info[0])
-    input()
-
+    print("--------------------------------------------------")
     success, failed = create_videos(video_info, args.output)
 
     print(f'Successfully created {len(success):4d} videos')
@@ -204,7 +205,7 @@ def create_videos(info: List[dict], output: str = 'output'):
         try:
             create_video(i, output)
             sucess.append(i)
-        except VideoCreationError:
+        except Exception as e:
             print('Video creation failed')
             failed.append(i)
 
@@ -231,7 +232,7 @@ def create_video(info: dict, output: str = 'output'):
     print(command)
 
     os.system(command)
-    input()
+
     if not os.path.exists(output):
         raise VideoCreationError(f'Failed to create video for {info["id"]}')
 
@@ -247,7 +248,7 @@ def get_input_settings() -> List[str]:
     Gets the input settings for ffmpeg
     """
     return [
-        # '-y',
+        '-y',
         # '-hide_banner',
         # '-loglevel', 'error',
         # '-v', 'quiet',
@@ -261,13 +262,14 @@ def get_output_settings(output: str, video_id: int) -> List[str]:
         '-map', '\'[vout]\'',
         '-map', '\'[aout]\'',
 
+        '-shortest',
+
         '-c:v', 'libx264',
         '-preset', 'slow',
         '-crf', '18',
         '-pix_fmt', 'yuv420p',
         '-c:a', 'aac',
         '-b:a', '192k',
-        '-shortest',
         '-movflags', '+faststart',
         f'{output}/{video_id}.{OUTPUT_ENDING}',
     ]
@@ -288,32 +290,36 @@ def get_filter_complex(info: dict):
     """
     # Gets the layout of the posts
     num_images = len(info['images'])
-    layout = get_post_layout(DIMENSIONS['imgs'], num_images)
+    layout = get_post_layout(DIMENSIONS['imgs'], DIMENSIONS['imgs_center'], num_images)
     x_post_dim, y_post_dim = get_media_dims(DIMENSIONS['imgs'], num_images)
     img_filter = ','.join([
-        f'scale={x_post_dim}:{y_post_dim}:force_original_aspect_ratio=decrease',
-        # f'pad={x_post_dim}:{y_post_dim}:(ow-iw)/2:(oh-ih)/2,setsar=1',
-        # f'crop={x_post_dim}:{y_post_dim}',
+        f'scale={x_post_dim - SMALLER}:{y_post_dim - SMALLER}:force_original_aspect_ratio=decrease',
     ])
+    x_rand = lambda: SMALLER + randint(-RAND_SHIFT, RAND_SHIFT)
+    y_rand = lambda: SMALLER + randint(-RAND_SHIFT, RAND_SHIFT)
     layout = [
-        f'[{i+2}:v]{img_filter},[base{i + 1}]overlay={x}:{y}[base{i+2}]' if i > 0 else 
-        f'[2:v]{img_filter},[0:v]overlay={x}:{y}[base2]'
+        f'[{i+2}:v]{img_filter},[base{i + 1}]overlay={x + x_rand()}:{y + y_rand()} [base{i+2}]' if i > 0 else 
+        f'[2:v]{img_filter},[v0]overlay={x + x_rand()}:{y + y_rand()}[base2]'
         for i, (x, y) in enumerate(layout)
         ]
 
     length = info['length']
     speed = info['speed']
+
+    video_length = get_media_length(f'backgrounds/{info["background"]}')
+    start_time = random() * (video_length - length)
+    end_time = start_time + length
+
     filter_complex = [
-        # f'[0:v]scale={length * speed}:1080:force_original_aspect_ratio=decrease',
-        # f'pad={length * speed}:1080:(ow-iw)/2:(oh-ih)/2,setsar=1[v0]',
+        f'[0:v]trim={start_time:.2f}:{end_time:.2f}',
+        'setpts=PTS-STARTPTS[v0]',
+
         *layout,
         f'[base{num_images + 1}]unsharp=3:3:1.5[vout]',
         *get_randomized_audio(info["audio"], info["length"]),
     ]
 
-    filter_complex = ','.join(filter_complex)
-
-    return filter_complex
+    return ','.join(filter_complex)
 
 
 def get_randomized_audio(audio: str, length: int) -> List[str]:
@@ -327,19 +333,20 @@ def get_randomized_audio(audio: str, length: int) -> List[str]:
     end_time = start_time + length
 
     audio_filter = [
-        f'[1:a]atrim={start_time:.2f}:{end_time:.2f}[aout]',
+        f'[1:a]atrim={start_time:.2f}:{end_time:.2f}',
+        'asetpts=PTS-STARTPTS[aout]',
     ]
 
     return audio_filter
 
-def get_post_layout(dimensions: tuple, num_images: int):
+def get_post_layout(dimensions: tuple, center: tuple, num_images: int):
     """
     Gets the layout of the posts
     """
     rows, columns = get_rows_columns(num_images)
 
     return [
-        get_pos(post_index, num_images, rows, columns, dimensions)
+        get_pos(post_index, num_images, rows, columns, dimensions, center)
         for post_index in range(num_images)
     ]
 
@@ -353,7 +360,7 @@ def get_media_dims(dimensions: tuple, num_images: int) -> tuple:
     return width // columns, height // rows
 
 
-def get_pos(curr_index: int, num_posts: int, rows: int, columns: int, dimensions: tuple):
+def get_pos(curr_index: int, num_posts: int, rows: int, columns: int, dimensions: tuple, center: tuple):
     """
     Gets the position of the post
 
@@ -372,6 +379,8 @@ def get_pos(curr_index: int, num_posts: int, rows: int, columns: int, dimensions
         The dimensions of the space to take up
     """
     x_dim, y_dim = dimensions
+    x_center, y_center = center
+
     width, height = x_dim // columns, y_dim // rows
 
     row = curr_index // columns
@@ -379,7 +388,8 @@ def get_pos(curr_index: int, num_posts: int, rows: int, columns: int, dimensions
 
     x_offset = (columns * rows - num_posts) * width // 2 if row == rows - 1 else 0
 
-    return column * width + x_offset, row * height
+    x, y = column * width + x_offset, row * height
+    return x + x_center - x_dim // 2, y + y_center - y_dim / 2
 
 
 def get_rows_columns(num_posts: int):
@@ -389,15 +399,15 @@ def get_rows_columns(num_posts: int):
     if num_posts == 1:
         return 1, 1
     elif num_posts == 2:
-        return 1, 2
+        return 2, 1
     elif num_posts == 3:
         return 2, 2
     elif num_posts == 4:
         return 2, 2
     elif num_posts == 5:
-        return 2, 3
+        return 3, 2
     elif num_posts == 6:
-        return 2, 3
+        return 3, 2
     elif num_posts == 7:
         return 3, 3
     elif num_posts == 8:
