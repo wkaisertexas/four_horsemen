@@ -31,7 +31,6 @@ API_KEYS_OF_INTEREST = ['id', 'subreddit', 'title', 'ups', 'downs',
 NUM_IMAGES = [1, 2, 3, 4, 5, 6] # Up to six images per video
 BACKGROUND_SPEED = [0, 0.5, 1, 1.5, 2, 2.5, 3]
 LENGTHS = [5, 10, 15]
-RAND_SHIFT = 20
 
 DIMENSIONS = {
     'output': (1080, 1920),
@@ -39,7 +38,8 @@ DIMENSIONS = {
     'imgs_center': (540, 930)
 }
 
-SMALLER = 10
+SMALLER = 20
+RAND_SHIFT = 15
 
 # IMPLEMENTATION
 
@@ -228,8 +228,7 @@ def create_video(info: dict, output: str = 'output'):
 
     command = ' '.join(command)
 
-    print(f'Creating video for {info["id"]}')
-    print(command)
+    print(f'Creating video for {info["id"]} with subreddit {info["subreddit"]} and category {info["category"]}')
 
     os.system(command)
 
@@ -249,9 +248,8 @@ def get_input_settings() -> List[str]:
     """
     return [
         '-y',
-        # '-hide_banner',
-        # '-loglevel', 'error',
-        # '-v', 'quiet',
+        '-hide_banner',
+        '-loglevel', 'error',
     ]
 
 def get_output_settings(output: str, video_id: int) -> List[str]:
@@ -295,11 +293,11 @@ def get_filter_complex(info: dict):
     img_filter = ','.join([
         f'scale={x_post_dim - SMALLER}:{y_post_dim - SMALLER}:force_original_aspect_ratio=decrease',
     ])
-    x_rand = lambda: SMALLER + randint(-RAND_SHIFT, RAND_SHIFT)
-    y_rand = lambda: SMALLER + randint(-RAND_SHIFT, RAND_SHIFT)
+    x_rand = lambda: SMALLER + randint(-RAND_SHIFT, RAND_SHIFT) + x_post_dim//2
+    y_rand = lambda: SMALLER + randint(-RAND_SHIFT, RAND_SHIFT) + y_post_dim//2
     layout = [
-        f'[{i+2}:v]{img_filter},[base{i + 1}]overlay={x + x_rand()}:{y + y_rand()} [base{i+2}]' if i > 0 else 
-        f'[2:v]{img_filter},[v0]overlay={x + x_rand()}:{y + y_rand()}[base2]'
+        f'[{i+2}:v]{img_filter},[base{i + 1}]overlay=({x + x_rand()}-w/2):({y + y_rand()}-h/2)[base{i+2}]' if i > 0 else 
+        f'[2:v]{img_filter},[v0]overlay=({x + x_rand()}-w/2):({y + y_rand()}-h/2)[base2]'
         for i, (x, y) in enumerate(layout)
         ]
 
