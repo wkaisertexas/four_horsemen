@@ -11,7 +11,7 @@ python3 four_horsemen/multi_meme.py -i subreddits.txt -b backgrounds\
 import os
 from typing import List
 from argparse import ArgumentParser
-from random import choice, randint, random
+from random import choice, randint, random, shuffle
 
 import pandas as pd
 import shutup
@@ -28,14 +28,14 @@ REQUESTYPES = ['top', 'hot', 'new', 'rising', 'controversial']
 API_KEYS_OF_INTEREST = ['id', 'subreddit', 'title', 'ups', 'downs',
                         'upvote_ratio', 'permalink', 'url']
 
-NUM_IMAGES = [1, 2, 3, 4, 5, 6] # Up to six images per video
+NUM_IMAGES = [ i for i in range(1, 5) ]
 BACKGROUND_SPEED = [0, 0.5, 1, 1.5, 2, 2.5, 3]
 LENGTHS = [5, 10, 15]
 
 DIMENSIONS = {
     'output': (1080, 1920),
-    'imgs': (980, 1820),
-    'imgs_center': (540, 930)
+    'imgs': (800, 1450),
+    'imgs_center': (500, 800)
 }
 
 SMALLER = 20
@@ -64,10 +64,16 @@ def main():
         f for f in os.listdir(args.audio)
         if any(f.endswith(ext) for ext in ALLOWED_AUDIO_EXTENSIONS)
         ]
-
+    
+    print(f'Found {len(backgrounds)} backgrounds')
+    print(f'Found {len(audios)} audios')
     print(f'Found {len(subreddits)} subreddits')
-    frame = get_subreddits(args, subreddits)
-    frame.to_excel(args.meta, index=False)
+
+    if os.path.isfile(args.meta):
+        frame = pd.read_excel(args.meta, index_col=False)
+    else:
+        frame = get_subreddits(args, subreddits)
+        frame.to_excel(args.meta, index=False)
 
     # Determines the number of videos per subreddit
     videos_per_subreddit = int(args.number) // len(subreddits) + 1
@@ -76,18 +82,24 @@ def main():
     print(f'Creating {videos_per_subreddit} videos per subreddit')
 
     video_info = make_info(frame, backgrounds, audios, videos_per_category)
-    print(len(video_info))
 
-    subreddits = {}
-    for video in video_info:
-        subreddits[video['subreddit']] = subreddits.get(video['subreddit'], 0) + 1
-    print(subreddits)
+    shuffle(video_info)
+
+    pd.DataFrame(video_info).to_excel('video_info.xlsx', index=False)
 
     print("--------------------------------------------------")
     success, failed = create_videos(video_info, args.output)
 
     print(f'Successfully created {len(success):4d} videos')
     print(f'Failed to create     {len(failed):4d} videos')
+
+    success = pd.DataFrame(success)
+    success['posted'] = False
+    success['posted_at'] = None
+    success.to_excel('success.xlsx', index=False)
+
+    failed = pd.DataFrame(failed)
+    failed.to_excel('failed.xlsx', index=False)
 
 
 def get_args():
@@ -181,7 +193,7 @@ def make_video_info(posts: pd.DataFrame, subreddit: str,
     '''
 
     image_count = choice(NUM_IMAGES)
-    posts = posts.sample(image_count)
+    post_imgs = posts.sample(image_count, replace=True)
 
     return {
         # Metadata
@@ -190,7 +202,7 @@ def make_video_info(posts: pd.DataFrame, subreddit: str,
         'category': category,
 
         # Video information
-        'images': posts['url'].tolist(),
+        'images': post_imgs['url'].tolist(),
         'n': image_count,
         'audio': choice(audios),
         'background': choice(backgrounds),
@@ -213,6 +225,7 @@ def create_videos(info: List[dict], output: str = 'output'):
             sucess.append(i)
         except Exception as e:
             print('Video creation failed')
+            print(e)
             failed.append(i)
 
     return sucess, failed
@@ -234,7 +247,8 @@ def create_video(info: dict, output: str = 'output'):
 
     command = ' '.join(command)
 
-    print(f'Creating video for {info["id"]} with subreddit {info["subreddit"]} and category {info["category"]}')
+    print(f'Creating video for {info["id"]} with subreddit'
+          f' r/{info["subreddit"]} and category {info["category"]}')
 
     os.system(command)
 
@@ -283,7 +297,7 @@ def get_inputs(images, background, audio):
     Gets the inputs for the FFmpeg command
     """
     return [
-        '-i', f'backgrounds/{background}',
+        '-i', f'../../Desktop/backgrounds/{background}',
         '-i', f'audios/{audio}',
         *sum([['-i', f'{os.path.join("tmp", f.split("/")[-1])}'] for f in images], []),
     ]
@@ -299,18 +313,19 @@ def get_filter_complex(info: dict):
     img_filter = ','.join([
         f'scale={x_post_dim - SMALLER}:{y_post_dim - SMALLER}:force_original_aspect_ratio=decrease',
     ])
-    x_rand = lambda: SMALLER + randint(-RAND_SHIFT, RAND_SHIFT) + x_post_dim//2
-    y_rand = lambda: SMALLER + randint(-RAND_SHIFT, RAND_SHIFT) + y_post_dim//2
+    x_rand = lambda: SMALLER + randint(-RAND_SHIFT, RAND_SHIFT)
+    y_rand = lambda: SMALLER + randint(-RAND_SHIFT, RAND_SHIFT)
+
     layout = [
-        f'[{i+2}:v]{img_filter},[base{i + 1}]overlay=({x + x_rand()}-w/2):({y + y_rand()}-h/2)[base{i+2}]' if i > 0 else 
-        f'[2:v]{img_filter},[v0]overlay=({x + x_rand()}-w/2):({y + y_rand()}-h/2)[base2]'
+        f'[{i+2}:v]{img_filter},[base{i + 1}]overlay=({x + x_rand()}):({y + y_rand()})[base{i+2}]' if i > 0 else 
+        f'[2:v]{img_filter},[v0]overlay=({x + x_rand()}):({y + y_rand()})[base2]'
         for i, (x, y) in enumerate(layout)
         ]
 
     length = info['length']
     speed = info['speed']
 
-    video_length = get_media_length(f'backgrounds/{info["background"]}')
+    video_length = get_media_length(f'../../Desktop/backgrounds/{info["background"]}')
     start_time = random() * (video_length - length)
     end_time = start_time + length
 
@@ -405,7 +420,7 @@ def get_rows_columns(num_posts: int):
     elif num_posts == 2:
         return 2, 1
     elif num_posts == 3:
-        return 2, 2
+        return 3, 1
     elif num_posts == 4:
         return 2, 2
     elif num_posts == 5:

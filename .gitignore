@@ -17,7 +17,9 @@ four_horsemen/MultiMemes/subreddits.txt
 
 # General backgrounds
 backgrounds
-
+output
+tmp
+*.xlsx
 
 # Created by https://www.toptal.com/developers/gitignore/api/python
 # Edit at https://www.toptal.com/developers/gitignore?templates=python
