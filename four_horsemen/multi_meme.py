@@ -76,6 +76,12 @@ def main():
     print(f'Creating {videos_per_subreddit} videos per subreddit')
 
     video_info = make_info(frame, backgrounds, audios, videos_per_category)
+    print(len(video_info))
+
+    subreddits = {}
+    for video in video_info:
+        subreddits[video['subreddit']] = subreddits.get(video['subreddit'], 0) + 1
+    print(subreddits)
 
     print("--------------------------------------------------")
     success, failed = create_videos(video_info, args.output)

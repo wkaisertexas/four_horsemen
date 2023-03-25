@@ -19,7 +19,7 @@ def get_posts(subreddit: str, post_type: str, limit: int, api_key: str) -> List[
 
     session = SESSION or requests.Session()
 
-    print(f'Getting posts from {url}')
+    print(f'Getting posts from {url:200s}')
     headers = {'User-Agent': 'Mozilla/5.0'}
     if api_key:
         posts = session.get(url, headers=headers, auth=api_key, timeout=20)
