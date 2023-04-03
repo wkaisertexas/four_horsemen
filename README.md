@@ -2,7 +2,14 @@
 
 This project came from the observation that Tik Tok contains four key horsemen: the "family guy clip", the "splitscreen", the "AITA" and the "comment section". During this project, I will be recreating all of these projects and recreating an account for each.
 
-`FFMPEG` is the library which makes all of this possible and is required for the installation
+[`FFmpeg`](https://ffmpeg.org) is the library which makes all of this possible and is required for the installation
+
+**Work done so far:**
+- [x] Family Guy Clip
+- [x] The MultiMeme
+- [ ] AITA
+- [ ] Reddit Comments Section 
+
 
 ## The Family Guy Clip
 
@@ -14,6 +21,8 @@ These clips have the following defining characteristics:
     - Parts overlapp by an average of 5 seconds
 - The original clip is edited from it's 16:9 resolution to 4:3 to make it take up more space on the screen
 
+> This is broken as PyTube is no longer maintained.
+
 ## The MultiMeme
 
 The MultiMeme is another staple of the Tik Tok community. Because one could never know which meme someone would actually like to watch. The multi-meme gets around this by displaying more than one meme at once in an attempt to hack the watch time algorithm. All in all, a dirty but effective trick.
@@ -24,7 +33,7 @@ These clips have the following defining characteristics:
 - Between 15 and 30 seconds in length
 
 ## Tik Tok Notes
-Videos uploaded are in 1080p, but 1080x1920 versus the traditional 1920x1080.
+Videos uploaded are in 1080p, but 1080x1920 versus the traditional 1920x1080. However, depending on the device used, the screen can get cut off.
 
 ## Future Work
 
@@ -49,15 +58,15 @@ This creates a daily task named `upload` which runs `uploadVideo.py` at 1:00pm
 #### MacOS + Linux
 
 Open your `crontab`
+
 ```bash
 crontab -e 
 ```
+
 Add the following command:
+
 ```bash
 0 13 * * * python uploadVideo.py 
 ```
+
 Save and exit the file
-
-## TODOs
-
-## References
